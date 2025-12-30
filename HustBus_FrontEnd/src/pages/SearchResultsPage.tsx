@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation } from 'react-router-dom';
 import FilterTabs from '../components/FilterTabs.tsx';
 import RouteSummaryCard from '../components/RouteSummaryCard.tsx';
 import { findRoutes, saveSearchHistory } from '../services/api.ts';
@@ -8,7 +8,6 @@ import { Loader2 } from 'lucide-react';
 
 export default function SearchResultsPage() {
     const location = useLocation();
-    const navigate = useNavigate();
     const { isAuthenticated } = useAuth();
     const [activeFilter, setActiveFilter] = useState('fastest');
     const [routes, setRoutes] = useState<any[]>([]);

@@ -463,6 +463,52 @@ docker logs -n 200 raptor-api
 
 ---
 
+## 11.5) Pull code mới về EC2 & redeploy (khi bạn cập nhật code trên GitHub)
+
+> Giả sử bạn đã clone repo vào: `/opt/hustbus`
+
+### A) Update nhanh (trường hợp phổ biến)
+
+```bash
+# 1) Kéo code mới
+cd /opt/hustbus
+git status
+git pull
+
+# 2) Backend: update deps + migrate DB + restart PM2
+cd /opt/hustbus/HustBus_Backend
+npm ci
+npx prisma generate
+npx prisma migrate deploy
+pm2 restart hustbus-backend
+
+# 3) Frontend: build lại (đảm bảo .env.production đúng domain)
+cd /opt/hustbus/HustBus_FrontEnd
+pnpm install
+pnpm build
+sudo nginx -t && sudo systemctl reload nginx
+
+# 4) FastAPI (chỉ khi bạn có sửa code trong /fastapi)
+cd /opt/hustbus/fastapi
+docker compose up -d --build
+```
+
+### B) Nếu `git pull` báo conflict hoặc bạn lỡ sửa code trực tiếp trên server
+
+```bash
+cd /opt/hustbus
+git status
+
+# Cách 1: tạm cất thay đổi rồi pull
+git stash -u
+git pull
+
+# (tuỳ chọn) lấy lại thay đổi đã stash nếu bạn cần
+# git stash pop
+```
+
+> Khuyến nghị: hạn chế sửa code trực tiếp trên EC2; nên sửa trên máy local rồi push lên GitHub.
+
 ## 12) Các biến môi trường quan trọng (tóm tắt)
 
 ### Backend (`HustBus_Backend/.env`)
