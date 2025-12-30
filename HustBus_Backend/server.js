@@ -33,6 +33,11 @@ app.get('/health', (req, res) =>
   res.json({ status: 'ok', timestamp: Date.now() })
 );
 
+// Health check (compat) - allow checking through Nginx /api/* proxy
+app.get('/api/health', (req, res) =>
+  res.json({ status: 'ok', timestamp: Date.now() })
+);
+
 // Reload GTFS cache endpoint
 app.post('/api/reload', (req, res) => {
   reloadGtfs();

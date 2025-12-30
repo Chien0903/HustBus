@@ -424,6 +424,11 @@ sudo nginx -t
 sudo systemctl reload nginx
 ```
 
+> LƯU Ý QUAN TRỌNG:
+> - Trước khi chạy Certbot, bạn phải thay `server_name` thành đúng domain bạn muốn cấp SSL.
+>   Ví dụ: `server_name hustbus.app www.hustbus.app;`
+> - Nếu bạn để `server_name` là IP/placeholder thì Certbot có thể cấp cert xong nhưng không tự install vào đúng server block.
+
 ---
 
 ## 10) (Tuỳ chọn) Bật HTTPS bằng Let’s Encrypt
@@ -431,9 +436,41 @@ sudo systemctl reload nginx
 Chỉ làm nếu bạn có domain trỏ về EC2.
 
 ```bash
-# AL2 có thể cần bật EPEL trước
-sudo amazon-linux-extras install -y epel || true
-sudo yum install -y certbot python3-certbot-nginx || sudo dnf install -y certbot python3-certbot-nginx
+# Amazon Linux 2 (AL2)
+# - AL2 mới có amazon-linux-extras
+# sudo amazon-linux-extras install -y epel || true
+# sudo yum install -y certbot python3-certbot-nginx
+#
+# Amazon Linux 2023 (AL2023)
+sudo dnf install -y certbot python3-certbot-nginx || true
+
+# Nếu AL2023 báo "No match for argument" (không tìm thấy package), dùng pip (fallback):
+if ! command -v certbot >/dev/null 2>&1; then
+  sudo dnf install -y python3-pip
+  sudo pip3 install -U certbot certbot-nginx
+fi
+
+# Cấp SSL (thêm -d www.<domain> nếu bạn dùng www)
+#
+# LƯU Ý:
+# - Tham số -d chỉ nhận "tên miền", KHÔNG có https:// và KHÔNG có dấu /
+# - Let's Encrypt dùng HTTP-01 => EC2 phải truy cập được từ Internet qua port 80
+# - Domain phải có bản ghi DNS A (hoặc AAAA) trỏ về đúng Public IP/Elastic IP của EC2
+#   (Lưu ý: cần record cho cả domain gốc `@` = hustbus.app và subdomain `www` nếu bạn xin cert cho cả 2)
+# - Nếu Certbot báo:
+#   "Timeout during connect (likely firewall problem)"
+#   thì gần như chắc chắn là do một trong các nguyên nhân sau:
+#   - Security Group chưa mở inbound TCP 80 (0.0.0.0/0) cho instance
+#   - Network ACL chặn port 80/443
+#   - Instance nằm trong private subnet (không có Internet Gateway/route ra Internet)
+#   - Firewall OS (firewalld) chặn port 80 (ít gặp hơn, nhưng có thể)
+#   Checklist kiểm tra nhanh:
+#   - AWS Console: SG inbound có HTTP 80 và HTTPS 443
+#   - Trên EC2: `sudo ss -lntp | egrep ':80|:443'` (nginx phải LISTEN :80)
+#   - Từ máy tính cá nhân: `curl -I http://hustbus.app` phải trả về HTTP response (không timeout)
+#
+# Ví dụ đúng:
+# sudo certbot --nginx -d hustbus.app -d www.hustbus.app
 sudo certbot --nginx -d <YOUR_DOMAIN>
 ```
 
