@@ -4,7 +4,7 @@ import SimpleMapViewer from '../components/SimpleMapViewer.tsx';
 import PlaceAutocomplete from '../components/PlaceAutocomplete.tsx';
 import RouteSummaryCard from '../components/RouteSummaryCard.tsx';
 import { Button } from '../components/ui/button.tsx';
-import { findRoutes, saveFavorite } from '../services/api.ts';
+import { findRoutes } from '../services/api.ts';
 import { reverseGeocode } from '../services/geocoding.ts';
 import { useAuth } from '../contexts/AuthContext.tsx';
 import { ArrowLeft, Search, MapPin, Loader2, Trash2 } from 'lucide-react';
@@ -17,7 +17,7 @@ const MAX_WIDTH = 600;
 
 export default function MapSearchPage() {
     const navigate = useNavigate();
-    const { isAuthenticated } = useAuth();
+    useAuth();
 
     // --- State Initialization ---
     const getSavedState = () => {

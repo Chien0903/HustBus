@@ -8,7 +8,7 @@ import RouteSummaryCard from '../components/RouteSummaryCard.tsx';
 import { VideoHero } from '../components/VideoHero.tsx';
 import { Button } from '../components/ui/button.tsx';
 
-import { findRoutes, saveFavorite } from '../services/api.ts';
+import { findRoutes } from '../services/api.ts';
 import { reverseGeocode } from '../services/geocoding.ts';
 import { useAuth } from '../contexts/AuthContext.tsx';
 import useGeolocation from '../hooks/useGeolocation.ts';
@@ -19,7 +19,7 @@ const MIN_WIDTH = 320;
 const MAX_WIDTH = 600;
 
 export default function HomePage() {
-    const { isAuthenticated } = useAuth();
+    useAuth();
     const { requestPosition, loading: locating } = useGeolocation();
     const [searchParams, setSearchParams] = useSearchParams();
 

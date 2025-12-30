@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import FilterTabs from '../components/FilterTabs.tsx';
 import RouteSummaryCard from '../components/RouteSummaryCard.tsx';
-import { findRoutes, saveFavorite, saveSearchHistory } from '../services/api.ts';
+import { findRoutes, saveSearchHistory } from '../services/api.ts';
 import { useAuth } from '../contexts/AuthContext.tsx';
 import { Loader2 } from 'lucide-react';
 
@@ -79,20 +79,6 @@ export default function SearchResultsPage() {
         const others = routes.filter((route) => route.id !== target.id);
         return [target, ...others];
     }, [routes, activeFilter]);
-
-    const handleSaveFavorite = async (routeId: string) => {
-        if (!isAuthenticated) {
-            setToast('Bạn cần đăng nhập để lưu lộ trình.');
-            navigate('/profile');
-            return;
-        }
-        try {
-            await saveFavorite({ routeId });
-            setToast('Đã lưu lộ trình vào yêu thích.');
-        } catch (err: any) {
-            setToast(err?.response?.data?.message || 'Không thể lưu lộ trình.');
-        }
-    };
 
     useEffect(() => {
         if (toast) {
