@@ -2,6 +2,7 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
 
 const routeRoutes = require('./routes/routeRoutes');
 const searchRoutes = require('./routes/searchRoutes');
@@ -27,6 +28,19 @@ app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
 app.use(morgan('dev'));
+
+// Serve uploaded files (e.g. user avatars)
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Legacy support: some users may still have path_url like "/assets/avatar/<file>"
+// Historically files were written into HustBus/frontend/public/assets/avatar.
+// Serve both the new backend upload directory and the legacy directory under the same route.
+app.use(
+  '/assets/avatar',
+  express.static(path.join(__dirname, 'uploads', 'avatar')),
+  express.static(path.join(__dirname, '..', 'frontend', 'public', 'assets', 'avatar')),
+  express.static(path.join(__dirname, '..', 'HustBus_FrontEnd', 'public', 'assets', 'avatar'))
+);
 
 // Health check
 app.get('/health', (req, res) =>

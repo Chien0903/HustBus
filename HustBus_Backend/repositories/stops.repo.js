@@ -1,6 +1,19 @@
 const prisma = require("../config/prisma");
 const { getVietnamTime } = require('../utils/vietnamTime');
 
+function getCleanLineName(routeId, shortName) {
+    const rid = (routeId || '').toString().trim();
+    if (rid) {
+        // GTFS convention in this project: "26_2" -> line "26", "03A_1" -> line "03A"
+        return rid.split('_')[0] || rid;
+    }
+    const sn = (shortName || '').toString().trim();
+    if (!sn) return '';
+    // Common noise: "n/a-26_2" -> "26"
+    const stripped = sn.replace(/^n\/a-/i, '');
+    return stripped.split('_')[0] || stripped;
+}
+
 module.exports = {
     getAll: (skip = 0, limit = 100, search = '') => {
         const where = search ? {
@@ -169,7 +182,9 @@ module.exports = {
             if (!routeMap.has(routeId)) {
                 routeMap.set(routeId, {
                     id: routeId,
-                    name: stopTime.short_name || stopTime.long_name || routeId,
+                    // IMPORTANT: FE expects "name" to be the bus line number shown in badges.
+                    // Avoid GTFS noise like "n/a-26_2" by deriving from route_id.
+                    name: getCleanLineName(routeId, stopTime.short_name),
                     shortName: stopTime.short_name,
                     longName: stopTime.long_name,
                     type: stopTime.type,

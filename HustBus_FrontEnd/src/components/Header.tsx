@@ -2,6 +2,7 @@ import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.tsx';
 import { User, LogOut, Menu, X } from 'lucide-react';
 import { useState } from 'react';
+import { resolveAvatarUrl } from '../lib/avatar';
 
 const Header = () => {
     const { isAuthenticated, user, logout, isAdmin } = useAuth();
@@ -66,7 +67,7 @@ const Header = () => {
                                 <Link to="/profile" className="flex items-center gap-2 hover:text-red transition-colors">
                                     {user?.path_url ? (
                                         <img
-                                            src={user.path_url}
+                                            src={resolveAvatarUrl(user.path_url) || undefined}
                                             alt={user.name || 'Avatar'}
                                             className="w-8 h-8 rounded-full object-cover border-2 border-red"
                                         />
@@ -138,7 +139,7 @@ const Header = () => {
                                     >
                                         {user?.path_url ? (
                                             <img
-                                                src={user.path_url}
+                                                src={resolveAvatarUrl(user.path_url) || undefined}
                                                 alt={user.name || 'Avatar'}
                                                 className="w-10 h-10 rounded-full object-cover border-2 border-red flex-shrink-0"
                                             />

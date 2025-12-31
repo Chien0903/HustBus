@@ -4,6 +4,7 @@ import { useAuth } from '../contexts/AuthContext.tsx';
 import { fetchProfile, removeFavorite, deleteHistory, uploadAvatar, getFavorites, getHistory } from '../services/api.ts';
 import { Button } from '../components/ui/button.tsx';
 import { Loader2, Trash2, Eye, History, ShieldCheck, Upload, User } from 'lucide-react';
+import { resolveAvatarUrl } from '../lib/avatar';
 
 interface FavoriteItem {
     id: string;
@@ -162,7 +163,7 @@ export default function ProfilePage() {
                             <div className="w-24 h-24 rounded-full overflow-hidden bg-white/10 flex items-center justify-center border-4 border-orange/30">
                                 {user?.path_url ? (
                                     <img
-                                        src={user.path_url}
+                                        src={resolveAvatarUrl(user.path_url) || undefined}
                                         alt={user.name || 'Avatar'}
                                         className="w-full h-full object-cover"
                                     />

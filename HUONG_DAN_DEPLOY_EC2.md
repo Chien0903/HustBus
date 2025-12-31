@@ -1,85 +1,116 @@
-# HƯỚNG DẪN DEPLOY HUSTBUS LÊN AWS EC2 AMAZON LINUX (CHI TIẾT TỪNG BƯỚC)
+# HƯỚNG DẪN DEPLOY HUSTBUS LÊN VPS UBUNTU (CHI TIẾT TỪNG BƯỚC)
 
-Tài liệu này hướng dẫn deploy dự án **HustBus** lên **EC2 Amazon Linux** (Amazon Linux 2 hoặc Amazon Linux 2023) theo kiểu production, gồm:
+Tài liệu này hướng dẫn deploy dự án **HustBus** lên **VPS Ubuntu** (khuyến nghị **Ubuntu 22.04 LTS** hoặc **Ubuntu 24.04 LTS**) theo kiểu production, gồm:
 
 - **Frontend**: `HustBus_FrontEnd` (React/Vite) → build ra static và serve bằng **Nginx**
 - **Backend**: `HustBus_Backend` (Node/Express + Prisma) → chạy bằng **PM2**
 - **FastAPI**: `fastapi/` (ferrobus) → chạy bằng **Docker** (có sẵn `fastapi/docker-compose.yml`)
 - **Postgres + Redis**: chạy bằng **Docker** (dễ setup, dễ backup)
 
-> Gợi ý cấu hình EC2: **tối thiểu 8GB RAM** (FastAPI load model rất nặng), khuyến nghị 16GB nếu dữ liệu lớn.
+> **Gợi ý cấu hình VPS**: tối thiểu **8GB RAM** (FastAPI load model rất nặng), khuyến nghị 16GB nếu dữ liệu lớn.
+> 
+> **Áp dụng cho**: VPS Ubuntu từ các nhà cung cấp (DigitalOcean, Vultr, Linode, Contabo, AWS EC2, Google Cloud, Azure...).
 
 ---
 
-## 0) Xác định Amazon Linux version (AL2 hay AL2023)
+## 0) Xác định Ubuntu version
 
-Chạy trên EC2:
+Chạy trên VPS:
 
 ```bash
 cat /etc/os-release
 ```
 
-- **Amazon Linux 2 (AL2)**: thường có `VERSION="2"` và có thể dùng `amazon-linux-extras`
-- **Amazon Linux 2023 (AL2023)**: thường có `VERSION_ID="2023"` và dùng `dnf`
+- **Ubuntu 22.04**: thường có `VERSION_ID="22.04"`
+- **Ubuntu 24.04**: thường có `VERSION_ID="24.04"`
 
 ---
 
-## 0.1) Nếu bạn đang dùng AL2023 + x86_64 (copy/paste nhanh)
-
-Bạn đã cung cấp:
-- OS: **Amazon Linux 2023**
-- Arch: **x86_64**
+## 0.1) Nếu bạn đang dùng Ubuntu 22.04/24.04 (copy/paste nhanh)
 
 Bạn có thể chạy nhanh các lệnh sau để cài tool nền (git + docker + compose):
 
 ```bash
 # 1) Tool cơ bản
-sudo dnf update -y
-sudo dnf install -y git curl unzip ca-certificates
+sudo apt-get update -y
+sudo apt-get install -y git curl unzip ca-certificates
 git --version
 
-# 2) Docker
-sudo dnf install -y docker
-sudo systemctl enable --now docker
-sudo usermod -aG docker ec2-user
-newgrp docker
-docker --version
+# 2) Docker Engine + Docker Compose plugin (docker compose ...)
+# (Cách chuẩn theo Docker, ổn định cho production)
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
 
-# 3) Docker Compose plugin (docker compose ...)
-DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-mkdir -p "$DOCKER_CONFIG/cli-plugins"
-curl -SL "https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-x86_64" \
-  -o "$DOCKER_CONFIG/cli-plugins/docker-compose"
-chmod +x "$DOCKER_CONFIG/cli-plugins/docker-compose"
+UBUNTU_CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  ${UBUNTU_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update -y
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+
+# cho phép user hiện tại dùng docker không cần sudo (đăng xuất/đăng nhập lại nếu cần)
+sudo usermod -aG docker "$USER"
+newgrp docker
+
+docker --version
 docker compose version
 ```
 
 ---
 
-## 0) Chuẩn bị trên AWS (làm trên Console)
+## 0.2) Chuẩn bị trước khi deploy
 
-### 0.1 Security Group
-Mở các inbound rules:
+### 0.2.1 Firewall (UFW)
+Nếu VPS của bạn bật UFW (Ubuntu Firewall), cần mở các port:
 
-- **SSH**: TCP 22 (source = IP của bạn, không nên mở 0.0.0.0/0)
-- **HTTP**: TCP 80 (0.0.0.0/0)
-- **HTTPS**: TCP 443 (0.0.0.0/0) (nếu dùng SSL)
+```bash
+# Kiểm tra UFW
+sudo ufw status
 
-### 0.2 Elastic IP / Domain (khuyến nghị)
-- Nếu có domain: trỏ A record về **Public IP** của EC2.
+# Nếu UFW đang active, mở port cần thiết:
+sudo ufw allow 22/tcp    # SSH (BẮT BUỘC, tránh bị khóa)
+sudo ufw allow 80/tcp    # HTTP
+sudo ufw allow 443/tcp   # HTTPS (nếu dùng SSL)
+
+# Nếu dùng port riêng cho Nginx (ví dụ 8082):
+# sudo ufw allow 8082/tcp
+```
+
+> **Lưu ý**: Nếu VPS provider có firewall riêng (ví dụ DigitalOcean Cloud Firewalls, Vultr Firewall), cấu hình tương tự trên panel của họ.
+
+### 0.2.2 Domain (khuyến nghị)
+- Nếu có domain: trỏ **A record** về **Public IP** của VPS (ví dụ: `hustbus.yourdomain.com` → `123.45.67.89`)
+- Kiểm tra DNS đã trỏ đúng: `nslookup hustbus.yourdomain.com` hoặc `dig +short hustbus.yourdomain.com`
 
 ---
 
-## 1) SSH vào EC2 từ Windows (đã có file key)
+## 1) SSH vào VPS từ máy local
 
-### 1.1 Nếu bạn dùng PowerShell
+### 1.1 Nếu VPS dùng SSH key (khuyến nghị)
+
+**PowerShell (Windows):**
 ```powershell
-ssh -i "C:\path\to\your-key.pem" ec2-user@<EC2_PUBLIC_IP>
+ssh -i "C:\path\to\your-key.pem" username@<VPS_PUBLIC_IP>
 ```
 
-### 1.2 Nếu bạn dùng Git Bash (Windows)
+**Git Bash/Linux/macOS:**
 ```bash
-ssh -i "/c/path/to/your-key.pem" ec2-user@<EC2_PUBLIC_IP>
+ssh -i ~/.ssh/your-key.pem username@<VPS_PUBLIC_IP>
+```
+
+> **Lưu ý về username**:
+> - Ubuntu VPS thường dùng `ubuntu` hoặc `root`
+> - VPS custom có thể là username bạn tự đặt (ví dụ `vandinh`, `admin`)
+> - Xem email setup VPS từ provider để biết user mặc định
+
+### 1.2 Nếu VPS dùng password
+
+```bash
+ssh username@<VPS_PUBLIC_IP>
+# Nhập password khi được hỏi
 ```
 
 > Nếu bị lỗi permission key (Windows hay gặp), thử:
@@ -92,65 +123,71 @@ icacls "C:\path\to\your-key.pem" /grant:r "$env:USERNAME:(R)"
 
 ## 2) Cập nhật hệ thống + cài tool cơ bản
 
-> Amazon Linux thường không dùng UFW; bạn quản lý mở port bằng **Security Group** (22/80/443).
+> **Lưu ý về firewall**: VPS Ubuntu có thể có **UFW** (Ubuntu Firewall) bật sẵn. Nếu bạn đã mở port ở bước 0.2.1, bỏ qua phần này. Nếu chưa, nhớ mở port **22/80/443** để không bị khóa SSH hoặc web không truy cập được.
 
-### 2.1 Amazon Linux 2 (yum)
+### 2.1 Ubuntu (apt)
 ```bash
-sudo yum update -y
-sudo yum install -y git curl unzip ca-certificates
-```
-
-### 2.2 Amazon Linux 2023 (dnf)
-```bash
-sudo dnf update -y
-sudo dnf install -y git curl unzip ca-certificates
+sudo apt-get update -y
+sudo apt-get install -y git curl unzip ca-certificates
 ```
 
 > Nếu bạn gặp lỗi `bash: git: command not found` thì bạn đang chưa chạy bước này hoặc cài thiếu `git`.
+
+### 2.2 Tránh xung đột port (khi server đã host web/app khác)
+
+Nếu bạn chạy `ss -tulpn` thấy **80/5000/3001...** đã bị service khác chiếm, **KHÔNG nên dùng lại các port đó** cho HustBus. Có 2 cách:
+
+#### **Cách A (khuyến nghị): Bạn đã có domain riêng cho HustBus**
+
+- Vẫn dùng `listen 80/443` trong Nginx config
+- Cấu hình `server_name hustbus.yourdomain.com` (virtual host)
+- Nginx sẽ tự động phân biệt theo domain: request tới `hustbus.yourdomain.com` → HustBus, request tới domain khác → site cũ
+- **Ưu điểm**: chuẩn production, dùng được SSL (Certbot), URL "sạch" (không cần ghi port)
+- **Bắt buộc**: domain phải trỏ (DNS A record) về IP public của server
+
+#### **Cách B: Không có domain (chỉ dùng IP)**
+
+- Cho HustBus chạy trên **port riêng**, ví dụ:
+  - **Frontend (Nginx)**: `8082`
+  - **Backend (Node)**: `4000` (giữ mặc định nếu chưa bị chiếm)
+  - **FastAPI**: `8000` (giữ mặc định nếu chưa bị chiếm)
+- Truy cập bằng: `http://<IP>:8082`
+- **Nhược điểm**: không dùng được Certbot/SSL tự động, URL có thêm `:8082`
+
+> **Nếu bạn đã có domain → dùng Cách A.** Hướng dẫn bên dưới (phần 9.3) sẽ cung cấp cả 2 config mẫu.
+
+Nếu bạn bật UFW và dùng Cách B (port riêng 8082):
+```bash
+sudo ufw allow 8082/tcp
+```
 
 ---
 
 ## 3) Cài Docker + Docker Compose plugin
 
-### 3.1 Amazon Linux 2
-```bash
-sudo yum install -y docker
-sudo systemctl enable docker
-sudo systemctl start docker
+### 3.1 Ubuntu (cài Docker theo repo chính thức)
 
-sudo usermod -aG docker ec2-user
+```bash
+sudo apt-get update -y
+sudo apt-get install -y ca-certificates curl gnupg
+
+sudo install -m 0755 -d /etc/apt/keyrings
+sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+sudo chmod a+r /etc/apt/keyrings/docker.asc
+
+UBUNTU_CODENAME="$(. /etc/os-release && echo "$VERSION_CODENAME")"
+echo \
+  "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
+  ${UBUNTU_CODENAME} stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+sudo apt-get update -y
+sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+sudo systemctl enable --now docker
+
+sudo usermod -aG docker "$USER"
 newgrp docker
 docker --version
-docker compose version || true
-```
-
-Nếu `docker compose version` chưa có, cài plugin (áp dụng cho cả AL2/AL2023, tự nhận arch x86_64/aarch64):
-
-```bash
-DOCKER_CONFIG=${DOCKER_CONFIG:-$HOME/.docker}
-mkdir -p "$DOCKER_CONFIG/cli-plugins"
-ARCH="$(uname -m)"
-if [ "$ARCH" = "x86_64" ]; then BIN="docker-compose-linux-x86_64"; \
-elif [ "$ARCH" = "aarch64" ]; then BIN="docker-compose-linux-aarch64"; \
-else echo "Unsupported arch: $ARCH" && exit 1; fi
-
-curl -SL "https://github.com/docker/compose/releases/download/v2.24.6/${BIN}" \
-  -o "$DOCKER_CONFIG/cli-plugins/docker-compose"
-chmod +x "$DOCKER_CONFIG/cli-plugins/docker-compose"
 docker compose version
-```
-
-### 3.2 Amazon Linux 2023
-
-```bash
-sudo dnf install -y docker
-sudo systemctl enable docker
-sudo systemctl start docker
-
-sudo usermod -aG docker ec2-user
-newgrp docker
-docker --version
-docker compose version || true
 ```
 
 ---
@@ -161,17 +198,20 @@ Chọn thư mục cài đặt, ví dụ `/opt`:
 
 ```bash
 cd /opt
-sudo mkdir -p hustbus && sudo chown -R ec2-user:ec2-user hustbus
+sudo mkdir -p hustbus && sudo chown -R $USER:$USER hustbus
 cd hustbus
 git clone https://github.com/Chien0903/HustBus.git .
 ```
+
+> **`$USER`** tự động lấy username hiện tại (ví dụ `vandinh`, `ubuntu`, ...). Nếu bạn muốn chỉ định rõ: `sudo chown -R vandinh:vandinh hustbus`
 
 > Nếu repo private: dùng deploy key hoặc `git clone` qua HTTPS + PAT.
 
 Nếu vẫn báo `git: command not found`, chạy:
 
 ```bash
-sudo yum install -y git || sudo dnf install -y git
+sudo apt-get update -y
+sudo apt-get install -y git
 git --version
 ```
 
@@ -231,8 +271,8 @@ docker ps
 
 ### 6.1 Cài Node.js (khuyến nghị Node 20+) + pnpm
 ```bash
-curl -fsSL https://rpm.nodesource.com/setup_20.x | sudo bash -
-sudo yum install -y nodejs || sudo dnf install -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt-get install -y nodejs
 node -v && npm -v
 
 sudo corepack enable
@@ -300,7 +340,8 @@ psql "postgresql://hustbus:CHANGE_ME_STRONG_PASSWORD@127.0.0.1:5432/hustbus" -f 
 
 > Nếu server chưa có `psql`, cài:
 ```bash
-sudo yum install -y postgresql || sudo dnf install -y postgresql
+sudo apt-get update -y
+sudo apt-get install -y postgresql-client
 ```
 
 Nếu import lên Neon/RDS, thay URL ở các lệnh `psql` thành `DATABASE_URL` của bạn (nhớ giữ `sslmode=require` nếu Neon yêu cầu).
@@ -337,20 +378,61 @@ pm2 -v
 ### 8.2 Start backend
 ```bash
 cd /opt/hustbus/HustBus_Backend
-pm2 start server.js --name hustbus-backend
+# Khuyến nghị: chạy theo script "start" trong package.json (tương đương: node server.js)
+pm2 start npm --name hustbus-backend -- start
 pm2 save
 pm2 status
 ```
 
 Tạo startup service:
 ```bash
-pm2 startup systemd -u ec2-user --hp /home/ec2-user
+pm2 startup systemd -u $USER --hp $HOME
 ```
 Copy lệnh PM2 in ra và chạy với `sudo` theo hướng dẫn.
+
+> **`$USER`** và **`$HOME`** tự động lấy username và home directory hiện tại (ví dụ `vandinh` + `/home/vandinh`).
 
 Kiểm tra:
 ```bash
 curl http://127.0.0.1:4000/health
+```
+
+### 8.3 (Tuỳ chọn) Chạy Backend bằng systemd (thay cho PM2)
+
+Nếu bạn muốn quản lý service theo chuẩn Ubuntu (không cần PM2), bạn có thể tạo systemd service:
+
+Tạo file: `/etc/systemd/system/hustbus-backend.service`
+
+```ini
+[Unit]
+Description=HustBus Backend (Node/Express)
+After=network.target
+
+[Service]
+Type=simple
+User=vandinh
+WorkingDirectory=/opt/hustbus/HustBus_Backend
+EnvironmentFile=/opt/hustbus/HustBus_Backend/.env
+ExecStart=/usr/bin/node /opt/hustbus/HustBus_Backend/server.js
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+> **Lưu ý**: Thay `User=vandinh` bằng username thực tế của bạn (chạy `whoami` để xem).
+
+Enable + start:
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now hustbus-backend
+sudo systemctl status hustbus-backend --no-pager
+```
+
+Xem log:
+```bash
+journalctl -u hustbus-backend -n 200 --no-pager
 ```
 
 ---
@@ -360,11 +442,25 @@ curl http://127.0.0.1:4000/health
 ### 9.1 Tạo env cho Frontend
 Tạo file: `/opt/hustbus/HustBus_FrontEnd/.env.production`
 
+**Nếu bạn dùng Cấu hình A (có domain, chạy port 80/443):**
+
 ```env
-VITE_API_URL=https://<DOMAIN_OR_EC2_PUBLIC_IP>
+# Nếu chưa có SSL (HTTP):
+VITE_API_URL=http://hustbus.example.com
+
+# Nếu đã cấp SSL (HTTPS - khuyến nghị):
+# VITE_API_URL=https://hustbus.example.com
 ```
 
-> Nếu bạn chạy HTTP (chưa SSL): dùng `http://...`
+**Nếu bạn dùng Cấu hình B (port riêng 8082):**
+
+```env
+VITE_API_URL=http://<IP_PUBLIC>:8082
+```
+
+> **Lưu ý**: 
+> - Frontend cần biết URL đầy đủ để gọi API. Nếu dùng domain + port 80/443 thì không cần ghi port.
+> - Sau khi sửa `.env.production`, nhớ **build lại** (`pnpm build`).
 
 ### 9.2 Build
 ```bash
@@ -376,27 +472,22 @@ pnpm build
 Sau build, thư mục output là `dist/`.
 
 ### 9.3 Cài Nginx + cấu hình reverse proxy
-
-#### Amazon Linux 2
+#### Ubuntu
 ```bash
-sudo amazon-linux-extras install -y nginx1
-sudo systemctl enable nginx
-sudo systemctl start nginx
-```
-
-#### Amazon Linux 2023
-```bash
-sudo dnf install -y nginx
+sudo apt-get update -y
+sudo apt-get install -y nginx
 sudo systemctl enable nginx
 sudo systemctl start nginx
 ```
 
 Tạo config: `/etc/nginx/conf.d/hustbus.conf`
 
+**Cấu hình A (khuyến nghị): Bạn đã có domain riêng**
+
 ```nginx
 server {
     listen 80;
-    server_name <DOMAIN_OR_EC2_PUBLIC_IP>;
+    server_name www.hustbus.app hustbus.app;  
 
     root /opt/hustbus/HustBus_FrontEnd/dist;
     index index.html;
@@ -418,56 +509,76 @@ server {
 }
 ```
 
+> **Giải thích**: Nginx phân biệt các site theo `server_name`. Nếu bạn đã có site khác chạy port 80 với domain khác (hoặc IP), HustBus sẽ chỉ xử lý request tới `hustbus.example.com`, không đụng site cũ.
+
+**Cấu hình B (nếu KHÔNG có domain): Dùng port riêng**
+
+```nginx
+server {
+    listen 8082;  # Port trống (tránh 80/3001/5000 đã bị chiếm)
+    server_name _;
+
+    root /opt/hustbus/HustBus_FrontEnd/dist;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    location /api/ {
+        proxy_pass http://127.0.0.1:4000/api/;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+> **Lưu ý**: Nếu dùng port riêng (8082), bạn phải:
+> - Mở port 8082 trong Firewall (UFW hoặc firewall của VPS provider).
+> - Đặt `VITE_API_URL=http://<IP>:8082` trong `.env.production` (FE).
+
 Enable site:
 ```bash
 sudo nginx -t
 sudo systemctl reload nginx
 ```
 
-> LƯU Ý QUAN TRỌNG:
-> - Trước khi chạy Certbot, bạn phải thay `server_name` thành đúng domain bạn muốn cấp SSL.
->   Ví dụ: `server_name hustbus.app www.hustbus.app;`
-> - Nếu bạn để `server_name` là IP/placeholder thì Certbot có thể cấp cert xong nhưng không tự install vào đúng server block.
+> **LƯU Ý QUAN TRỌNG**:
+> - **Nếu bạn có domain và muốn dùng SSL (Certbot)**: BẮT BUỘC dùng **Cấu hình A** (listen 80 + `server_name` là domain thật).
+> - Certbot cần port 80 mở và domain trỏ đúng IP để xác minh. Nếu dùng port riêng (8082), Certbot sẽ không hoạt động.
+> - Sau khi chạy Certbot thành công, Nginx config sẽ tự động thêm `listen 443 ssl` và redirect HTTP → HTTPS.
 
 ---
 
-## 10) (Tuỳ chọn) Bật HTTPS bằng Let’s Encrypt
+## 10) (Tuỳ chọn) Bật HTTPS bằng Let's Encrypt
 
-Chỉ làm nếu bạn có domain trỏ về EC2.
+Chỉ làm nếu bạn có domain trỏ về VPS.
 
 ```bash
-# Amazon Linux 2 (AL2)
-# - AL2 mới có amazon-linux-extras
-# sudo amazon-linux-extras install -y epel || true
-# sudo yum install -y certbot python3-certbot-nginx
-#
-# Amazon Linux 2023 (AL2023)
-sudo dnf install -y certbot python3-certbot-nginx || true
-
-# Nếu AL2023 báo "No match for argument" (không tìm thấy package), dùng pip (fallback):
-if ! command -v certbot >/dev/null 2>&1; then
-  sudo dnf install -y python3-pip
-  sudo pip3 install -U certbot certbot-nginx
-fi
+# Ubuntu
+sudo apt-get update -y
+sudo apt-get install -y certbot python3-certbot-nginx
 
 # Cấp SSL (thêm -d www.<domain> nếu bạn dùng www)
 #
 # LƯU Ý:
 # - Tham số -d chỉ nhận "tên miền", KHÔNG có https:// và KHÔNG có dấu /
-# - Let's Encrypt dùng HTTP-01 => EC2 phải truy cập được từ Internet qua port 80
-# - Domain phải có bản ghi DNS A (hoặc AAAA) trỏ về đúng Public IP/Elastic IP của EC2
+# - Let's Encrypt dùng HTTP-01 => VPS phải truy cập được từ Internet qua port 80
+# - Domain phải có bản ghi DNS A (hoặc AAAA) trỏ về đúng Public IP của VPS
 #   (Lưu ý: cần record cho cả domain gốc `@` = hustbus.app và subdomain `www` nếu bạn xin cert cho cả 2)
 # - Nếu Certbot báo:
 #   "Timeout during connect (likely firewall problem)"
 #   thì gần như chắc chắn là do một trong các nguyên nhân sau:
-#   - Security Group chưa mở inbound TCP 80 (0.0.0.0/0) cho instance
-#   - Network ACL chặn port 80/443
-#   - Instance nằm trong private subnet (không có Internet Gateway/route ra Internet)
-#   - Firewall OS (firewalld) chặn port 80 (ít gặp hơn, nhưng có thể)
+#   - UFW hoặc Firewall VPS chưa mở port 80/443
+#   - Provider firewall (DigitalOcean/Vultr Cloud Firewall) chưa mở port 80/443
+#   - Nginx chưa chạy hoặc chưa listen :80
 #   Checklist kiểm tra nhanh:
-#   - AWS Console: SG inbound có HTTP 80 và HTTPS 443
-#   - Trên EC2: `sudo ss -lntp | egrep ':80|:443'` (nginx phải LISTEN :80)
-#   - Từ máy tính cá nhân: `curl -I http://hustbus.app` phải trả về HTTP response (không timeout)
+#   - Trên VPS: `sudo ufw status` (phải allow 80/443)
+#   - Trên VPS: `sudo ss -lntp | egrep ':80|:443'` (nginx phải LISTEN :80)
+#   - Từ máy tính cá nhân: `curl -I http://hustbus.yourdomain.com` phải trả về HTTP response (không timeout)
 #
 # Ví dụ đúng:
 # sudo certbot --nginx -d hustbus.app -d www.hustbus.app
@@ -496,11 +607,13 @@ docker logs -n 200 raptor-api
 ```
 
 ### 11.4 Kiểm tra web từ bên ngoài
-- Mở trình duyệt: `http://<DOMAIN_OR_EC2_PUBLIC_IP>`
+- Mở trình duyệt:
+  - **Nếu dùng Cấu hình A (domain + port 80)**: `http://hustbus.example.com` (hoặc `https://...` nếu đã cấp SSL)
+  - **Nếu dùng Cấu hình B (port riêng 8082)**: `http://<IP_PUBLIC>:8082`
 
 ---
 
-## 11.5) Pull code mới về EC2 & redeploy (khi bạn cập nhật code trên GitHub)
+## 11.5) Pull code mới về VPS & redeploy (khi bạn cập nhật code trên GitHub)
 
 > Giả sử bạn đã clone repo vào: `/opt/hustbus`
 
@@ -544,7 +657,7 @@ git pull
 # git stash pop
 ```
 
-> Khuyến nghị: hạn chế sửa code trực tiếp trên EC2; nên sửa trên máy local rồi push lên GitHub.
+> **Khuyến nghị**: hạn chế sửa code trực tiếp trên VPS; nên sửa trên máy local rồi push lên GitHub.
 
 ## 12) Các biến môi trường quan trọng (tóm tắt)
 

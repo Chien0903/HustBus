@@ -3,8 +3,8 @@ const path = require('path');
 const fs = require('fs');
 const prisma = require('../config/prisma');
 
-// Configure storage to save to frontend/public/assets/avatar
-const AVATAR_DIR = path.join(__dirname, '../../frontend/public/assets/avatar');
+// Configure storage to save to backend uploads (served by Express static)
+const AVATAR_DIR = path.join(__dirname, '..', 'uploads', 'avatar');
 
 // Ensure directory exists
 if (!fs.existsSync(AVATAR_DIR)) {
@@ -62,7 +62,10 @@ exports.uploadAvatar = [
 
             // Sanitize filename to prevent path traversal
             const sanitizedFilename = path.basename(req.file.filename);
-            const avatarPath = `/assets/avatar/${sanitizedFilename}`;
+            // Serve via backend static: /uploads/avatar/<file>
+            const avatarPath = `/uploads/avatar/${sanitizedFilename}`;
+            const baseUrl = `${req.protocol}://${req.get('host')}`;
+            const avatarUrl = `${baseUrl}${avatarPath}`;
 
             // Get old avatar path to delete old file
             const user = await prisma.users.findUnique({
@@ -73,31 +76,47 @@ exports.uploadAvatar = [
             // Update user avatar path in database
             await prisma.users.update({
                 where: { id: userId },
-                data: { path_url: avatarPath }
+                // Store absolute URL so FE can always load regardless of which domain serves FE
+                data: { path_url: avatarUrl }
             });
 
             // Delete old avatar file if exists
-            if (user?.path_url && user.path_url.startsWith('/assets/avatar/')) {
-                // Sanitize old path to prevent path traversal
-                const oldFilename = path.basename(user.path_url);
-                const oldFilePath = path.join(__dirname, '../../frontend/public/assets/avatar', oldFilename);
+            if (user?.path_url) {
+                // Support both legacy relative paths and new absolute URL paths
+                const legacyPrefix = '/assets/avatar/';
+                const newPrefix = '/uploads/avatar/';
+                const pathOnly = (() => {
+                    if (user.path_url.startsWith('http://') || user.path_url.startsWith('https://')) {
+                        try {
+                            return new URL(user.path_url).pathname;
+                        } catch {
+                            return user.path_url;
+                        }
+                    }
+                    return user.path_url;
+                })();
 
-                // Validate path is within expected directory
-                const resolvedPath = path.resolve(oldFilePath);
-                const expectedDir = path.resolve(__dirname, '../../frontend/public/assets/avatar');
+                if (pathOnly.startsWith(legacyPrefix) || pathOnly.startsWith(newPrefix)) {
+                    const oldFilename = path.basename(pathOnly);
+                    const oldFilePath = path.join(AVATAR_DIR, oldFilename);
 
-                if (resolvedPath.startsWith(expectedDir) && fs.existsSync(oldFilePath)) {
-                    try {
-                        fs.unlinkSync(oldFilePath);
-                    } catch (err) {
-                        console.error('Failed to delete old avatar:', err);
+                    // Validate path is within expected directory
+                    const resolvedPath = path.resolve(oldFilePath);
+                    const expectedDir = path.resolve(AVATAR_DIR);
+
+                    if (resolvedPath.startsWith(expectedDir) && fs.existsSync(oldFilePath)) {
+                        try {
+                            fs.unlinkSync(oldFilePath);
+                        } catch (err) {
+                            console.error('Failed to delete old avatar:', err);
+                        }
                     }
                 }
             }
 
             res.json({
                 message: 'Upload ảnh đại diện thành công!',
-                avatarUrl: avatarPath
+                avatarUrl
             });
 
         } catch (error) {

@@ -57,7 +57,14 @@ function getInitialAuth(): AuthState {
     try {
         const stored = localStorage.getItem(STORAGE_KEY);
         if (!stored) return { user: null, token: null };
-        return JSON.parse(stored);
+        const parsed = JSON.parse(stored) as AuthState;
+        // IMPORTANT: Set Authorization header synchronously on app boot.
+        // Otherwise, components may fire authenticated requests before AuthProvider's useEffect runs,
+        // causing 401 -> refresh fail -> tokens cleared -> user appears "logged out" after reload.
+        if (parsed?.token) {
+            setAuthToken(parsed.token);
+        }
+        return parsed;
     } catch (error) {
         return { user: null, token: null };
     }
