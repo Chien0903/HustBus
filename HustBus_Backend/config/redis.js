@@ -2,13 +2,17 @@ const Redis = require('ioredis');
 const { getVietnamISOString } = require('../utils/vietnamTime');
 
 let redisClient;
+let warnedMissingRedisUrl = false;
 
 function getRedisClient() {
     if (!redisClient) {
         const redisUrl = process.env.REDIS_URL;
 
         if (!redisUrl) {
-            console.warn('⚠️  REDIS_URL not configured. Refresh tokens will not persist.');
+            if (!warnedMissingRedisUrl) {
+                console.warn('⚠️  REDIS_URL not configured. Refresh tokens will not persist.');
+                warnedMissingRedisUrl = true;
+            }
             return null;
         }
 

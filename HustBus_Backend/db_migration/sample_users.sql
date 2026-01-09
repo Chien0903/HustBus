@@ -1,6 +1,10 @@
 -- Sample Users Data
 -- Password for all users: "password123"
 -- Hashed with bcrypt (10 rounds)
+--
+-- Requirements:
+-- - Extension `pgcrypto` for gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 INSERT INTO users (id, name, email, password, created_at, path_url, role) VALUES
 -- Regular users
@@ -69,6 +73,13 @@ INSERT INTO users (id, name, email, password, created_at, path_url, role) VALUES
     NULL,
     'admin'
 );
+
+-- Allow re-running this script safely (email is UNIQUE)
+ON CONFLICT (email) DO UPDATE SET
+    name = EXCLUDED.name,
+    password = EXCLUDED.password,
+    path_url = EXCLUDED.path_url,
+    role = EXCLUDED.role;
 
 -- Note: Replace the password hashes above with actual bcrypt hashes
 -- You can generate them using: bcrypt.hash("password123", 10)

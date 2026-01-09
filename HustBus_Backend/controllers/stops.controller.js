@@ -57,15 +57,16 @@ module.exports = {
     // PUT /stops/:id
     async updateStop(req, res) {
         const { id } = req.params;
-        const { name, lat, lng, type, address } = req.body;
+        const { name, lat, lng, type } = req.body;
 
         try {
+            // NOTE: Prisma model `stops` currently has no `address` column.
+            // Only pass fields that exist in the schema.
             const updatedStop = await stopsService.updateStop(id, {
                 name,
                 lat,
                 lng,
-                type,
-                address
+                type
             });
 
             if (!updatedStop) {

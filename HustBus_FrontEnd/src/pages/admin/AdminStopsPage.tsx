@@ -17,7 +17,6 @@ interface Stop {
     lat: number;
     lng: number;
     type?: string;
-    address?: string;
     routes?: string[];
 }
 
@@ -35,7 +34,6 @@ export default function AdminStopsPage() {
         lat: 0,
         lng: 0,
         type: 'bus_stop',
-        address: ''
     });
 
     const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:4000';
@@ -127,7 +125,6 @@ export default function AdminStopsPage() {
             lat: 0,
             lng: 0,
             type: 'bus_stop',
-            address: ''
         });
         setIsEditing(false);
     };
@@ -411,16 +408,6 @@ export default function AdminStopsPage() {
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                    Địa chỉ
-                                </label>
-                                <Input
-                                    value={formData.address || ''}
-                                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                                    placeholder="Nhập địa chỉ cụ thể..."
-                                />
-                            </div>
-
                             <div className="flex gap-2 pt-2">
                                 <Button
                                     type="submit"
@@ -445,4 +432,3 @@ export default function AdminStopsPage() {
         </div>
     );
 }
-
