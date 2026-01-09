@@ -101,23 +101,11 @@ async function findPaths(req, res) {
     };
 
     if (!departureTime) {
-      // No time provided, use current time
-      const currentTimeStr = new Date().toLocaleTimeString("en-GB", {
-        timeZone: "Asia/Ho_Chi_Minh",
-        hour12: false,
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
-
-      if (isWithinOperatingHours(currentTimeStr)) {
-        departureTime = currentTimeStr;
-      } else {
-        console.log(
-          `⚠️  Thời gian hiện tại (${currentTimeStr}) ngoài giờ hoạt động (05:00-21:00). Sử dụng thời gian mặc định: 08:00:00`
-        );
-        departureTime = "08:00:00";
-      }
+      // No time provided, use default time 08:00:00
+      console.log(
+        `⚠️  Không có thời gian từ frontend. Sử dụng thời gian mặc định: 08:00:00`
+      );
+      departureTime = "08:00:00";
     } else {
       // Time provided by frontend, validate it
       if (!isWithinOperatingHours(departureTime)) {

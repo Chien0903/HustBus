@@ -407,7 +407,6 @@ export default function AdminStopsPage() {
                                 </select>
                             </div>
 
-                            <div>
                             <div className="flex gap-2 pt-2">
                                 <Button
                                     type="submit"
