@@ -70,6 +70,7 @@ model stops {
   lat        Float
   lng        Float
   type       String?      @db.VarChar(10)
+  address    String?      @db.Text
   stop_times stop_times[]
 }
 
